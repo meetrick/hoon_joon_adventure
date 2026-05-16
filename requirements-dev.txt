@@ -1,0 +1,3 @@
+# For tools/slice_character_sheets.py (optional venv)
+Pillow>=10.0.0
+numpy>=1.26.0

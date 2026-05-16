@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>행궁동 어드벤쳐</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="canvas-wrap">
+      <canvas id="game" width="360" height="640" aria-label="게임 화면"></canvas>
+      <div id="menu" role="dialog" aria-labelledby="menu-title">
+        <h1 id="menu-title">행궁동 어드벤쳐</h1>
+        <p id="load-hint" class="muted">에셋 불러오는 중…</p>
+        <div id="char-row" class="hidden-until-ready" hidden>
+          <button type="button" class="char-btn selected" data-char="hoon" aria-pressed="true">훈</button>
+          <button type="button" class="char-btn" data-char="joon" aria-pressed="false">준</button>
+        </div>
+        <button type="button" id="btn-start" class="hidden-until-ready" hidden disabled>시작</button>
+      </div>
+      <div id="gameover-overlay" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="go-title">
+        <div class="modal-card">
+          <h2 id="go-title">게임 오버 (Game Over)</h2>
+          <p class="modal-stat">점수: <span id="go-score">0</span></p>
+          <button type="button" id="btn-go-menu" class="modal-btn">다시 하기</button>
+        </div>
+      </div>
+      <div id="victory-overlay" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="vic-title">
+        <div class="modal-card modal-card--victory">
+          <h2 id="vic-title">게임 클리어! 행궁동 정복!</h2>
+          <p class="modal-stat">점수: <span id="vic-score">0</span></p>
+          <button type="button" id="btn-vic-menu" class="modal-btn modal-btn--victory">메인으로</button>
+        </div>
+      </div>
+      <div id="touch-controls" class="touch-controls hidden" aria-hidden="true">
+        <div class="touch-controls__left">
+          <button type="button" id="btn-left" class="touch-btn" aria-label="왼쪽 이동">◀</button>
+          <button type="button" id="btn-right" class="touch-btn" aria-label="오른쪽 이동">▶</button>
+        </div>
+        <div class="touch-controls__right">
+          <button type="button" id="btn-jump" class="touch-btn touch-btn--jump" aria-label="점프">JUMP</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="game.js"></script>
+</body>
+</html>
