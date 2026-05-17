@@ -1,5 +1,5 @@
 /**
- * Haenggung-dong Survival — Phase 6 HUD + end states (see MASTER_PLAN.md).
+ * Haenggung-dong Survival — catch insects for score, dodge pests to protect health.
  * Victory at score >= 200; game over at health <= 0; both return to menu.
  * English comments; Korean UI in index.html / canvas HUD.
  */
@@ -21,13 +21,14 @@ const PLAYER_H = 50;
 /** Logical draw height for sliced sprites; width follows aspect (nearest-friendly ints). */
 const PLAYER_DRAW_TARGET_H = 80;
 
-const BUG_W = 24;
-const BUG_H = 24;
+const FALLING_ITEM_W = 24;
+const FALLING_ITEM_H = 24;
+const INSECT_SCORE_VALUE = 5;
 
 /** Base values at level 1; scaled up to level 10 (see levelT + helpers below). */
-const BUG_FALL_SPEED_BASE = 200;
-const BUG_SPAWN_BASE_SEC = 1.05;
-const BUG_SPAWN_MIN_SEC = 0.42;
+const ITEM_FALL_SPEED_BASE = 200;
+const ITEM_SPAWN_BASE_SEC = 1.05;
+const ITEM_SPAWN_MIN_SEC = 0.42;
 
 const LEVEL_MAX = 10;
 /** Win condition (MASTER_PLAN §5). */
@@ -79,10 +80,21 @@ const ASSET_MANIFEST = [
   { id: "Joon_Move2", file: "characters/joon_move2.png", fw: 50, fh: 50, color: "green" },
   { id: "Joon_Move3", file: "characters/joon_move3.png", fw: 50, fh: 50, color: "lightgreen" },
   { id: "Obs_Bug", file: "obs_bug.png", fw: 32, fh: 32, color: "brown" },
+  { id: "Insect_Butterfly", file: "insect_butterfly.png", fw: 32, fh: 32, color: "#ef5da8" },
+  { id: "Insect_StagBeetle", file: "insect_stag_beetle.png", fw: 32, fh: 32, color: "#7b4118" },
+  { id: "Insect_RhinoBeetle", file: "insect_rhino_beetle.png", fw: 32, fh: 32, color: "#653d1e" },
+  { id: "Insect_Grasshopper", file: "insect_grasshopper.png", fw: 32, fh: 32, color: "#71be40" },
   { id: "Help_Mom", file: "mom.png", fw: 50, fh: 50, color: "pink" },
   { id: "Help_Dad", file: "daddy.png", fw: 50, fh: 50, color: "purple" },
   { id: "Item_Heart", file: "item_heart.png", fw: 20, fh: 20, color: "red" },
   { id: "UI_Heart", file: "ui_heart.png", fw: 30, fh: 30, color: "red" },
+];
+
+const BENEFICIAL_INSECTS = [
+  { assetId: "Insect_Butterfly" },
+  { assetId: "Insect_StagBeetle" },
+  { assetId: "Insect_RhinoBeetle" },
+  { assetId: "Insect_Grasshopper" },
 ];
 
 class AssetManager {
@@ -175,9 +187,9 @@ let selectedCharacter = "hoon";
 let health = HEALTH_MAX;
 let score = 0;
 
-/** @type {{ x: number, y: number, w: number, h: number }[]} */
-let bugs = [];
-let bugSpawnAcc = 0;
+/** @type {{ x: number, y: number, w: number, h: number, vy: number, kind: "pest" | "insect", assetId: string, scoreValue: number }[]} */
+let fallingItems = [];
+let itemSpawnAcc = 0;
 
 /** @type {{ x: number, y: number, w: number, h: number, vx: number, vy: number }[]} */
 let hearts = [];
@@ -286,7 +298,7 @@ function stopMusic() {
   }
 }
 
-/** MASTER_PLAN §12: level = min(10, floor(score/20)+1). */
+/** Level tracks score from collected insects. */
 function levelFromScore(sc) {
   return Math.min(LEVEL_MAX, Math.floor(sc / 20) + 1);
 }
@@ -296,14 +308,14 @@ function levelT(level) {
   return clamp((level - 1) / (LEVEL_MAX - 1), 0, 1);
 }
 
-function bugSpawnIntervalSec(level) {
+function itemSpawnIntervalSec(level) {
   const t = levelT(level);
-  return clamp(BUG_SPAWN_BASE_SEC * (1 - t * 0.58), BUG_SPAWN_MIN_SEC, BUG_SPAWN_BASE_SEC);
+  return clamp(ITEM_SPAWN_BASE_SEC * (1 - t * 0.58), ITEM_SPAWN_MIN_SEC, ITEM_SPAWN_BASE_SEC);
 }
 
-function bugFallSpeedPx(level) {
+function itemFallSpeedPx(level) {
   const t = levelT(level);
-  return BUG_FALL_SPEED_BASE * (1 + t * 0.92);
+  return ITEM_FALL_SPEED_BASE * (1 + t * 0.92);
 }
 
 function getPlayerDrawDimensions() {
@@ -360,8 +372,8 @@ function resetPlayer() {
 function resetRun() {
   health = HEALTH_MAX;
   score = 0;
-  bugs = [];
-  bugSpawnAcc = 0;
+  fallingItems = [];
+  itemSpawnAcc = 0;
   hearts = [];
   helperCameo = null;
   heartCooldownSec = HEART_FIRST_DELAY_SEC;
@@ -463,52 +475,74 @@ function playerHitbox() {
   };
 }
 
-function spawnBug(level) {
-  const x = Math.random() * Math.max(1, LOGICAL_W - BUG_W);
-  const vy = bugFallSpeedPx(level);
-  bugs.push({ x, y: -BUG_H - 8, w: BUG_W, h: BUG_H, vy });
+function spawnFallingItem(level) {
+  const x = Math.random() * Math.max(1, LOGICAL_W - FALLING_ITEM_W);
+  const vy = itemFallSpeedPx(level);
+  const insectChance = clamp(0.72 - levelT(level) * 0.18, 0.54, 0.72);
+  const isInsect = Math.random() < insectChance;
+  if (isInsect) {
+    const insect = BENEFICIAL_INSECTS[Math.floor(Math.random() * BENEFICIAL_INSECTS.length)];
+    fallingItems.push({
+      x,
+      y: -FALLING_ITEM_H - 8,
+      w: FALLING_ITEM_W,
+      h: FALLING_ITEM_H,
+      vy,
+      kind: "insect",
+      assetId: insect.assetId,
+      scoreValue: INSECT_SCORE_VALUE,
+    });
+    return;
+  }
+
+  fallingItems.push({
+    x,
+    y: -FALLING_ITEM_H - 8,
+    w: FALLING_ITEM_W,
+    h: FALLING_ITEM_H,
+    vy,
+    kind: "pest",
+    assetId: "Obs_Bug",
+    scoreValue: 0,
+  });
 }
 
 function updateSpawners(dtSec) {
   const lv = levelFromScore(score);
-  const bugEvery = bugSpawnIntervalSec(lv);
-  bugSpawnAcc += dtSec;
-  while (bugSpawnAcc >= bugEvery) {
-    bugSpawnAcc -= bugEvery;
-    spawnBug(lv);
+  const itemEvery = itemSpawnIntervalSec(lv);
+  itemSpawnAcc += dtSec;
+  while (itemSpawnAcc >= itemEvery) {
+    itemSpawnAcc -= itemEvery;
+    spawnFallingItem(lv);
   }
 }
 
-function moveObstacles(dtSec) {
-  for (const b of bugs) {
-    const vy = typeof b.vy === "number" ? b.vy : BUG_FALL_SPEED_BASE;
-    b.y += vy * dtSec;
+function moveFallingItems(dtSec) {
+  for (const item of fallingItems) {
+    const vy = typeof item.vy === "number" ? item.vy : ITEM_FALL_SPEED_BASE;
+    item.y += vy * dtSec;
   }
 }
 
 function resolveCollisions() {
   const hb = playerHitbox();
-  const nextBugs = [];
-  for (const b of bugs) {
-    if (rectOverlap(hb.x, hb.y, hb.w, hb.h, b.x, b.y, b.w, b.h)) {
-      health = Math.max(0, health - 1);
+  const nextItems = [];
+  for (const item of fallingItems) {
+    if (rectOverlap(hb.x, hb.y, hb.w, hb.h, item.x, item.y, item.w, item.h)) {
+      if (item.kind === "pest") {
+        health = Math.max(0, health - 1);
+      } else {
+        score += item.scoreValue;
+      }
     } else {
-      nextBugs.push(b);
+      nextItems.push(item);
     }
   }
-  bugs = nextBugs;
+  fallingItems = nextItems;
 }
 
-function scoreOffScreen() {
-  const nextBugs = [];
-  for (const b of bugs) {
-    if (b.y > LOGICAL_H) {
-      score += 1;
-    } else {
-      nextBugs.push(b);
-    }
-  }
-  bugs = nextBugs;
+function removeOffScreenItems() {
+  fallingItems = fallingItems.filter((item) => item.y <= LOGICAL_H);
 }
 
 function syncCanvasBufferSize() {
@@ -799,10 +833,10 @@ function drawFloorStrip() {
   ctx.fillRect(0, FLOOR_TOP_Y, LOGICAL_W, 2);
 }
 
-function drawObstacles() {
+function drawFallingItems() {
   if (!ctx) return;
-  for (const b of bugs) {
-    assets.drawSprite(ctx, "Obs_Bug", b.x, b.y, b.w, b.h);
+  for (const item of fallingItems) {
+    assets.drawSprite(ctx, item.assetId, item.x, item.y, item.w, item.h);
   }
 }
 
@@ -947,7 +981,7 @@ function tick(nowMs) {
 
   updateHeartCooldown(dtSec);
   updateSpawners(dtSec);
-  moveObstacles(dtSec);
+  moveFallingItems(dtSec);
   updatePlayer(dtSec, dtMs);
   moveHearts(dtSec);
   updateHelperCameo(dtMs);
@@ -958,7 +992,7 @@ function tick(nowMs) {
     return;
   }
   resolveHeartPickups();
-  scoreOffScreen();
+  removeOffScreenItems();
 
   if (score >= VICTORY_SCORE) {
     triggerVictory();
@@ -974,7 +1008,7 @@ function tick(nowMs) {
   if (level >= 8) {
     drawRainParticles(nowMs);
   }
-  drawObstacles();
+  drawFallingItems();
   drawHelperCameo();
   drawHearts();
   drawPlayer();
@@ -1005,7 +1039,7 @@ function bindMenu() {
   if (!menu || !loadHint || !charRow || !btnStart) return;
 
   assets.loadAll(() => {
-    loadHint.textContent = "캐릭터를 고르고 시작하세요.";
+    loadHint.textContent = "곤충을 잡아 점수를 얻고, 거미는 피하세요.";
     charRow.hidden = false;
     btnStart.hidden = false;
     btnStart.disabled = false;
