@@ -204,6 +204,7 @@ let lastTickMs = 0;
 let musicCtx = null;
 let musicGain = null;
 let musicTimer = 0;
+let musicStarting = false;
 let musicStep = 0;
 let musicNextTime = 0;
 
@@ -268,30 +269,57 @@ function scheduleMusicStep(time, step) {
   }
 }
 
-function startMusic() {
-  if (musicTimer) return;
+function ensureMusicContext() {
   const AudioCtor = window.AudioContext || window.webkitAudioContext;
-  if (!AudioCtor) return;
+  if (!AudioCtor) return false;
   if (!musicCtx) {
     musicCtx = new AudioCtor();
     musicGain = musicCtx.createGain();
-    musicGain.gain.value = 0.18;
+    musicGain.gain.value = 0.28;
     musicGain.connect(musicCtx.destination);
   }
-  musicCtx.resume();
-  musicStep = 0;
-  musicNextTime = musicCtx.currentTime + 0.04;
-  musicTimer = window.setInterval(() => {
-    if (!musicCtx) return;
-    while (musicNextTime < musicCtx.currentTime + MUSIC_LOOKAHEAD_SEC) {
-      scheduleMusicStep(musicNextTime, musicStep);
-      musicStep += 1;
-      musicNextTime += MUSIC_STEP_SEC;
-    }
-  }, 25);
+  return true;
+}
+
+function unlockAudio() {
+  if (!ensureMusicContext() || !musicCtx) return null;
+  if (musicCtx.state === "suspended") {
+    return musicCtx.resume();
+  }
+  return null;
+}
+
+function startMusic() {
+  if (musicTimer || musicStarting) return;
+  if (!ensureMusicContext() || !musicCtx) return;
+  musicStarting = true;
+
+  const beginLoop = () => {
+    musicStarting = false;
+    if (gameState !== "playing" || musicTimer || !musicCtx) return;
+    musicStep = 0;
+    musicNextTime = musicCtx.currentTime + 0.04;
+    musicTimer = window.setInterval(() => {
+      if (!musicCtx) return;
+      while (musicNextTime < musicCtx.currentTime + MUSIC_LOOKAHEAD_SEC) {
+        scheduleMusicStep(musicNextTime, musicStep);
+        musicStep += 1;
+        musicNextTime += MUSIC_STEP_SEC;
+      }
+    }, 25);
+  };
+
+  const resume = unlockAudio();
+  if (resume && typeof resume.then === "function") {
+    resume.then(beginLoop).catch(beginLoop);
+    return;
+  }
+
+  beginLoop();
 }
 
 function stopMusic() {
+  musicStarting = false;
   if (musicTimer) {
     window.clearInterval(musicTimer);
     musicTimer = 0;
@@ -1057,6 +1085,9 @@ function bindMenu() {
       });
     });
   });
+
+  btnStart.addEventListener("pointerdown", unlockAudio, { passive: true });
+  btnStart.addEventListener("touchstart", unlockAudio, { passive: true });
 
   btnStart.addEventListener("click", () => {
     gameState = "playing";
